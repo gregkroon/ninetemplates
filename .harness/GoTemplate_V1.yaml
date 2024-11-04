@@ -1,0 +1,182 @@
+template:
+  name: GoTemplate
+  type: Pipeline
+  projectIdentifier: nine
+  orgIdentifier: default
+  spec:
+    properties:
+      ci:
+        codebase:
+          connectorRef: account.Github
+          repoName: golang-k8s-helm-helloworld
+          build: <+input>
+          sparseCheckout: []
+    stages:
+      - stage:
+          name: Build
+          identifier: Builde
+          description: ""
+          type: CI
+          spec:
+            cloneCodebase: true
+            caching:
+              enabled: true
+              paths: []
+            platform:
+              os: Linux
+              arch: Amd64
+            runtime:
+              type: Cloud
+              spec: {}
+            execution:
+              steps:
+                - step:
+                    identifier: gotestreport
+                    name: go_test_report
+                    spec:
+                      connectorRef: account.dockerhubkroon
+                      image: golang:latest
+                      shell: Sh
+                      command: "export GOBIN=/home/harness/go/bin\n\t\texport PATH=/home/harness/go/bin:$PATH\n\t\techo $PATH\n\t\tgo install github.com/jstemmer/go-junit-report/v2@latest\n\t\tgo mod tidy\n\t\t(go test -v /harness/interfaces 2>&1 | tee test-output.txt | go-junit-report -set-exit-code > report.xml) || true\n\t\t#go test -v 2>&1 ./... | tee test-output.txt | go-junit-report -set-exit-code > report.xml\n\t\t#go test -v 2>&1 /harness/interfaces | tee test-output.txt | go-junit-report -set-exit-code > report.xml\n\n\t\t#go test -v 2>&1 ./... | go-junit-report -set-exit-code > report.xml"
+                      reports:
+                        type: JUnit
+                        spec:
+                          paths:
+                            - /harness/report.xml
+                    timeout: ""
+                    type: Run
+                - parallel:
+                    - step:
+                        type: Semgrep
+                        name: Semgrep
+                        identifier: SCA
+                        spec:
+                          mode: orchestration
+                          config: default
+                          target:
+                            type: repository
+                            detection: auto
+                          advanced:
+                            log:
+                              level: info
+                        when:
+                          stageStatus: Success
+                    - step:
+                        type: OsvScanner
+                        name: Osv
+                        identifier: OsvScanner
+                        spec:
+                          mode: orchestration
+                          config: default
+                          target:
+                            type: repository
+                            detection: auto
+                          advanced:
+                            log:
+                              level: info
+                        when:
+                          stageStatus: Success
+                - step:
+                    identifier: dockerbuild
+                    name: docker_build
+                    spec:
+                      connectorRef: account.dockerhubkroon
+                      repo: munkys123/gosample
+                      tags:
+                        - <+pipeline.sequenceId>
+                      caching: true
+                    timeout: ""
+                    type: BuildAndPushDockerRegistry
+                    when:
+                      stageStatus: Success
+                - step:
+                    type: AquaTrivy
+                    name: AquaTrivy
+                    identifier: AquaTrivy_1
+                    spec:
+                      mode: orchestration
+                      config: default
+                      target:
+                        type: container
+                        detection: auto
+                      advanced:
+                        log:
+                          level: info
+                      resources:
+                        limits:
+                          memory: 2G
+                          cpu: 1000m
+                      privileged: true
+                      image:
+                        type: docker_v2
+                        access_id: munkys123
+                        access_token: Submariner7
+                        tag: <+pipeline.sequenceId>
+                        name: munkys123/gosample
+                      sbom:
+                        format: spdx-json
+            buildIntelligence:
+              enabled: false
+          slsa_provenance:
+            enabled: false
+          platform:
+            os: Linux
+            arch: Amd64
+          runtime:
+            type: Cloud
+            spec: {}
+          buildIntelligence:
+            enabled: false
+      - stage:
+          name: deploy
+          identifier: deploy
+          description: ""
+          type: Deployment
+          spec:
+            deploymentType: Kubernetes
+            service:
+              serviceRef: goappp
+              serviceInputs:
+                serviceDefinition:
+                  type: Kubernetes
+                  spec:
+                    artifacts:
+                      primary:
+                        primaryArtifactRef: <+input>
+                        sources: <+input>
+            environment:
+              environmentRef: dev
+              deployToAll: false
+              infrastructureDefinitions:
+                - identifier: dev
+            execution:
+              steps:
+                - step:
+                    name: Rollout Deployment
+                    identifier: rolloutDeployment
+                    type: K8sRollingDeploy
+                    timeout: 10m
+                    spec:
+                      skipDryRun: false
+                      pruningEnabled: false
+              rollbackSteps:
+                - step:
+                    name: Rollback Rollout Deployment
+                    identifier: rollbackRolloutDeployment
+                    type: K8sRollingRollback
+                    timeout: 10m
+                    spec:
+                      pruningEnabled: false
+          tags: {}
+          failureStrategies:
+            - onFailure:
+                errors:
+                  - AllErrors
+                action:
+                  type: StageRollback
+          when:
+            pipelineStatus: Success
+    delegateSelectors:
+      - kubernetes-delegate
+  identifier: GoTemplate
+  versionLabel: V1

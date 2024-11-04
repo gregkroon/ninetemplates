@@ -128,7 +128,7 @@ template:
           buildIntelligence:
             enabled: false
       - stage:
-          name: deploy
+          name: Dev
           identifier: deploy
           description: ""
           type: Deployment

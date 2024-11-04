@@ -129,7 +129,7 @@ template:
             enabled: false
       - stage:
           name: Dev
-          identifier: deploy
+          identifier: Dev
           description: ""
           type: Deployment
           spec:
